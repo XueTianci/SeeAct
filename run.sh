@@ -1,0 +1,1 @@
+python src/seeact.py -c config/auto_mode.toml
