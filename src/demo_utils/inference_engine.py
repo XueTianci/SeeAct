@@ -25,7 +25,10 @@ from openai import (
 from openai import OpenAI
 import base64
 import json
+from litellm import completion
 
+import litellm
+# litellm.set_verbose = True 
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
@@ -40,6 +43,140 @@ class Engine:
         return self.tokenizer(input)
 
 
+
+class LitellmEngine(Engine):
+    def __init__(
+            self,
+            api_key=None,
+            stop=["\n\n"],
+            rate_limit=-1,
+            model=None,
+            temperature=0,
+            reasoning_effort="medium",
+            claude_thinking_tokens=-1,
+            **kwargs,
+    ) -> None:
+        self.stop = stop
+        self.temperature = temperature
+        self.model = model
+        self.request_interval = 0 if rate_limit == -1 else 60.0 / rate_limit
+
+        self.reasoning_models = [
+        "o4-mini-2025-04-16",
+        "o3-2025-04-16",
+        ]
+        self.reasoning_effort = reasoning_effort
+        self.claude_thinking_tokens = int(claude_thinking_tokens)
+        if model in self.reasoning_models:
+            print("Using reasoning model")
+            print("reasoning_effort:",reasoning_effort)
+        if self.claude_thinking_tokens != -1:
+            print("Using Claude thinking tokens")
+            print("claude_thinking_tokens:",self.claude_thinking_tokens)
+        Engine.__init__(self, **kwargs)
+
+    def encode_image(self, image_path):
+        with open(self, image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+
+    def generate(self, prompt: list = None, max_new_tokens=8192, temperature=None, model=None, image_path=None,
+                 ouput__0=None, turn_number=0, response1=None, **kwargs):
+
+        prompt0 = prompt[0]
+        prompt1 = prompt[1]
+        prompt2 = prompt[2]
+
+        model = model if model else self.model
+
+        if turn_number == 0:
+            base64_image = encode_image(image_path)
+            # Assume one turn dialogue
+            prompt1_input = [
+                {"role": "system", "content": prompt0},
+                {"role": "user",
+                 "content": [{"type": "text", "text": prompt1}, {"type": "image_url", "image_url": {"url":
+                                                                                                        f"data:image/jpeg;base64,{base64_image}",
+                                                                                                    "detail": "high"},
+                                                                 }]},
+            ]
+            if self.claude_thinking_tokens > 0:
+                response1 = completion(
+                    model=model,
+                    messages=prompt1_input,
+                    max_tokens=max_new_tokens + self.claude_thinking_tokens,
+                    thinking={"type": "enabled", "budget_tokens": self.claude_thinking_tokens},
+                    **kwargs,
+                )
+
+            elif model in self.reasoning_models:
+                response1 = completion(
+                    model= model,
+                    messages=prompt1_input,
+                    max_completion_tokens=max_new_tokens * 2,
+                    reasoning_effort=self.reasoning_effort,
+                    **kwargs,
+                )
+
+            else:
+                response1 = completion(
+                    model=model,
+                    messages=prompt1_input,
+                    max_tokens=max_new_tokens if max_new_tokens else 8192,
+                    temperature=temperature if temperature else self.temperature,
+                    **kwargs,
+                )
+            answer1 = [choice.message.content for choice in response1.choices][0]
+
+            return answer1, response1
+        elif turn_number == 1:
+            base64_image = encode_image(image_path)
+            prompt2_input = [
+                {"role": "system", "content": prompt0},
+                {"role": "user",
+                 "content": [{"type": "text", "text": prompt1}, {"type": "image_url", "image_url": {"url":
+                                                                                                        f"data:image/jpeg;base64,{base64_image}",
+                                                                                                    "detail": "high"}, }]},
+                {"role": "assistant", "content": [{"type": "text", "text": f"\n\n{ouput__0}"}]},
+                {"role": "user", "content": [{"type": "text", "text": prompt2}]}, ]
+            if self.claude_thinking_tokens > 0:
+                prompt2_input = [
+                {"role": "system", "content": prompt0},
+                {"role": "user",
+                 "content": [{"type": "text", "text": prompt1}, {"type": "image_url", "image_url": {"url":
+                                                                                                        f"data:image/jpeg;base64,{base64_image}",
+                                                                                                    "detail": "high"}, }]},
+                {"role": "assistant", "content": response1.choices[0].message.thinking_blocks + [{"type": "text", "text": f"\n\n{ouput__0}"}]},
+                {"role": "user", "content": [{"type": "text", "text": prompt2}]}, ]
+
+                response2 = completion(
+                    model=model,
+                    messages=prompt2_input,
+                    max_tokens=max_new_tokens + self.claude_thinking_tokens,
+                    thinking={"type": "enabled", "budget_tokens": self.claude_thinking_tokens},
+                    **kwargs,
+                )
+
+            elif model in self.reasoning_models:
+                response2 = completion(
+                    model=model,
+                    messages=prompt2_input,
+                    max_completion_tokens=max_new_tokens * 2,
+                    reasoning_effort=self.reasoning_effort,
+                    **kwargs,
+                )
+            else:
+                response2 = completion(
+                    model=model,
+                    messages=prompt2_input,
+                    max_tokens=max_new_tokens if max_new_tokens else 8192,
+                    temperature=temperature if temperature else self.temperature,
+                    **kwargs,
+                )
+            
+            return [choice.message.content for choice in response2.choices][0]
+
+
+
 class OpenaiEngine(Engine):
     def __init__(
             self,
@@ -48,6 +185,7 @@ class OpenaiEngine(Engine):
             rate_limit=-1,
             model=None,
             temperature=0,
+            reasoning_effort=None,
             **kwargs,
     ) -> None:
         """Init an OpenAI GPT/Codex engine
@@ -80,6 +218,14 @@ class OpenaiEngine(Engine):
         self.client = OpenAI(
                             api_key=api_key,
                         )
+        self.reasoning_models = [
+        "o4-mini-2025-04-16",
+        "o3-2025-04-16",
+        ]
+        self.reasoning_effort = reasoning_effort
+        if model in self.reasoning_models:
+            print("Using reasoning model")
+            print("reasoning_effort:",reasoning_effort)
         Engine.__init__(self, **kwargs)
 
     def encode_image(self, image_path):
@@ -95,7 +241,7 @@ class OpenaiEngine(Engine):
         max_tries=3,
         on_backoff=log_error
     )
-    def generate(self, prompt: list = None, max_new_tokens=4096, temperature=None, model=None, image_path=None,
+    def generate(self, prompt: list = None, max_new_tokens=8192, temperature=None, model=None, image_path=None,
                  ouput__0=None, turn_number=0, **kwargs):
         self.current_key_idx = (self.current_key_idx + 1) % len(self.api_keys)
         start_time = time.time()
@@ -109,6 +255,8 @@ class OpenaiEngine(Engine):
         prompt1 = prompt[1]
         prompt2 = prompt[2]
 
+        model = model if model else self.model
+
         if turn_number == 0:
             base64_image = encode_image(image_path)
             # Assume one turn dialogue
@@ -120,13 +268,25 @@ class OpenaiEngine(Engine):
                                                                                                     "detail": "high"},
                                                                  }]},
             ]
-            response1 = self.client.chat.completions.create(
-                model=model if model else self.model,
-                messages=prompt1_input,
-                max_tokens=max_new_tokens if max_new_tokens else 4096,
-                temperature=temperature if temperature else self.temperature,
-                **kwargs,
-            )
+
+            if model in self.reasoning_models:
+                response1 = self.client.chat.completions.create(
+                    model= model,
+                    messages=prompt1_input,
+                    max_completion_tokens=max_new_tokens if max_new_tokens else 8192,
+                    # temperature=temperature,
+                    reasoning_effort=self.reasoning_effort,
+                    **kwargs,
+                )
+
+            else:
+                response1 = self.client.chat.completions.create(
+                    model=model,
+                    messages=prompt1_input,
+                    max_tokens=max_new_tokens if max_new_tokens else 8192,
+                    temperature=temperature if temperature else self.temperature,
+                    **kwargs,
+                )
             answer1 = [choice.message.content for choice in response1.choices][0]
 
             return answer1
@@ -140,13 +300,25 @@ class OpenaiEngine(Engine):
                                                                                                     "detail": "high"}, }]},
                 {"role": "assistant", "content": [{"type": "text", "text": f"\n\n{ouput__0}"}]},
                 {"role": "user", "content": [{"type": "text", "text": prompt2}]}, ]
-            response2 = self.client.chat.completions.create(
-                model=model if model else self.model,
-                messages=prompt2_input,
-                max_tokens=max_new_tokens if max_new_tokens else 4096,
-                temperature=temperature if temperature else self.temperature,
-                **kwargs,
-            )
+            
+            if model in self.reasoning_models:
+                
+                response2 = self.client.chat.completions.create(
+                    model=model,
+                    messages=prompt2_input,
+                    max_completion_tokens=max_new_tokens if max_new_tokens else 8192,
+                    # temperature=temperature,
+                    reasoning_effort=self.reasoning_effort,
+                    **kwargs,
+                )
+            else:
+                response2 = self.client.chat.completions.create(
+                    model=model,
+                    messages=prompt2_input,
+                    max_tokens=max_new_tokens if max_new_tokens else 8192,
+                    temperature=temperature if temperature else self.temperature,
+                    **kwargs,
+                )
             
             return [choice.message.content for choice in response2.choices][0]
 

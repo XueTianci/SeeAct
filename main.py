@@ -23,8 +23,8 @@ def run(input: dict[str, dict], **kwargs) -> dict[str, str]:
     except toml.TomlDecodeError:
         print(f"Error: File '{kwargs["config_path"]}' is not a valid TOML file.")
 
-    config["openai"]["model"] = kwargs["model_name"]
-    config["openai"]["api_key"] = os.getenv("OPENAI_API_KEY", None)
+    config["api_parameter"]["model"] = kwargs["model_name"]
+    # config["openai"]["api_key"] = os.getenv("OPENAI_API_KEY", None)
 
     task_id, task = list(input.items())[0]
     task["task_id"] = task_id

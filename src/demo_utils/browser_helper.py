@@ -310,13 +310,14 @@ async def get_element_description(element, tag_name, role_value, type_value):
         "title",
         "value",
     ]
+    timeout_time = 120000
 
     parent_value = "parent_node: "
     parent_locator = element.locator('xpath=..')
     num_parents = await parent_locator.count()
     if num_parents > 0:
         # only will be zero or one parent node
-        parent_text = (await parent_locator.inner_text(timeout=0) or "").strip()
+        parent_text = (await parent_locator.inner_text(timeout=timeout_time) or "").strip()
         if parent_text:
             parent_value += parent_text
     parent_value = remove_extra_eol(get_first_line(parent_value)).strip()
@@ -332,18 +333,18 @@ async def get_element_description(element, tag_name, role_value, type_value):
         text4 = ""
 
         text2 = await element.evaluate(
-            "select => select.options[select.selectedIndex].textContent", timeout=0
+            "select => select.options[select.selectedIndex].textContent", timeout=timeout_time
         )
 
         if text2:
             options = await element.evaluate("select => Array.from(select.options).map(option => option.text)",
-                                             timeout=0)
+                                             timeout=timeout_time)
             text4 = " | ".join(options)
 
             if not text4:
-                text4 = await element.text_content(timeout=0)
+                text4 = await element.text_content(timeout=timeout_time)
                 if not text4:
-                    text4 = await element.inner_text(timeout=0)
+                    text4 = await element.inner_text(timeout=timeout_time)
 
             return parent_value+text1 + remove_extra_eol(text2.strip()) + text3 + text4
 
@@ -354,16 +355,16 @@ async def get_element_description(element, tag_name, role_value, type_value):
     if tag_name == "input" or tag_name == "textarea":
         if role_value not in none_input_type and type_value not in none_input_type:
             text1 = "input value="
-            text2 = await element.input_value(timeout=0)
+            text2 = await element.input_value(timeout=timeout_time)
             if text2:
                 input_value = text1 + "\"" + text2 + "\"" + " "
 
-    text_content = await element.text_content(timeout=0)
+    text_content = await element.text_content(timeout=timeout_time)
     text = (text_content or '').strip()
     if text:
         text = remove_extra_eol(text)
         if len(text) > 80:
-            text_content_in = await element.inner_text(timeout=0)
+            text_content_in = await element.inner_text(timeout=timeout_time)
             text_in = (text_content_in or '').strip()
             if text_in:
                 return input_value + remove_extra_eol(text_in)
@@ -373,7 +374,7 @@ async def get_element_description(element, tag_name, role_value, type_value):
     # get salient_attributes
     text1 = ""
     for attr in salient_attributes:
-        attribute_value = await element.get_attribute(attr, timeout=0)
+        attribute_value = await element.get_attribute(attr, timeout=timeout_time)
         if attribute_value:
             text1 += f"{attr}=" + "\"" + attribute_value.strip() + "\"" + " "
 
@@ -388,7 +389,7 @@ async def get_element_description(element, tag_name, role_value, type_value):
     num_childs = await first_child_locator.count()
     if num_childs>0:
         for attr in salient_attributes:
-            attribute_value = await first_child_locator.get_attribute(attr, timeout=0)
+            attribute_value = await first_child_locator.get_attribute(attr, timeout=timeout_time)
             if attribute_value:
                 text1 += f"{attr}=" + "\"" + attribute_value.strip() + "\"" + " "
 
@@ -400,47 +401,53 @@ async def get_element_description(element, tag_name, role_value, type_value):
 
 
 async def get_element_data(element, tag_name):
-    tag_name_list = ['a', 'button',
-                     'input',
-                     'select', 'textarea', 'adc-tab']
+    try:
+        timeout_time = 120000
+        tag_name_list = ['a', 'button',
+                        'input',
+                        'select', 'textarea', 'adc-tab']
 
-    # await aprint(element,tag_name)
-    if await element.is_hidden(timeout=0) or await element.is_disabled(timeout=0):
-        return None
-
-    tag_head = ""
-    real_tag_name = ""
-    if tag_name in tag_name_list:
-        tag_head = tag_name
-        real_tag_name = tag_name
-    else:
-        real_tag_name = await element.evaluate("element => element.tagName.toLowerCase()", timeout=0)
-        if real_tag_name in tag_name_list:
-            # already detected
+        # await aprint(element,tag_name)
+        if await element.is_hidden(timeout=timeout_time) or await element.is_disabled(timeout=timeout_time):
             return None
+
+        tag_head = ""
+        real_tag_name = ""
+        if tag_name in tag_name_list:
+            tag_head = tag_name
+            real_tag_name = tag_name
         else:
-            tag_head = real_tag_name
+            real_tag_name = await element.evaluate("element => element.tagName.toLowerCase()", timeout=timeout_time)
+            if real_tag_name in tag_name_list:
+                # already detected
+                return None
+            else:
+                tag_head = real_tag_name
 
-    role_value = await element.get_attribute('role', timeout=0)
-    type_value = await element.get_attribute('type', timeout=0)
-    # await aprint("start to get element description",element,tag_name )
-    description = await get_element_description(element, real_tag_name, role_value, type_value)
-    if not description:
+        role_value = await element.get_attribute('role', timeout=timeout_time)
+        type_value = await element.get_attribute('type', timeout=timeout_time)
+        # await aprint("start to get element description",element,tag_name )
+        description = await get_element_description(element, real_tag_name, role_value, type_value)
+        if not description:
+            return None
+
+        rect = await element.bounding_box() or {'x': 0, 'y': 0, 'width': 0, 'height': 0}
+
+        if role_value:
+            tag_head += " role=" + "\"" + role_value + "\""
+        if type_value:
+            tag_head += " type=" + "\"" + type_value + "\""
+
+        box_model = [rect['x'], rect['y'], rect['x'] + rect['width'], rect['y'] + rect['height']]
+        center_point = ((box_model[0] + box_model[2]) / 2, (box_model[1] + box_model[3]) / 2)
+        selector = element
+
+
+        return [center_point, description, tag_head, box_model, selector, real_tag_name]
+    
+    except Exception as e:
+        print("timeout in get_element_data", e)
         return None
-
-    rect = await element.bounding_box() or {'x': 0, 'y': 0, 'width': 0, 'height': 0}
-
-    if role_value:
-        tag_head += " role=" + "\"" + role_value + "\""
-    if type_value:
-        tag_head += " type=" + "\"" + type_value + "\""
-
-    box_model = [rect['x'], rect['y'], rect['x'] + rect['width'], rect['y'] + rect['height']]
-    center_point = ((box_model[0] + box_model[2]) / 2, (box_model[1] + box_model[3]) / 2)
-    selector = element
-
-
-    return [center_point, description, tag_head, box_model, selector, real_tag_name]
 
 
 async def get_interactive_elements_with_playwright(page):
@@ -461,20 +468,30 @@ async def get_interactive_elements_with_playwright(page):
 
     seen_elements = set()
     for selector in interactive_elements_selectors:
-        locator = page.locator(selector)
-        element_count = await locator.count()
-        for index in range(element_count):
-            element = locator.nth(index)
-            tag_name = selector.replace(":not([tabindex=\"-1\"])", "")
-            tag_name = tag_name.replace(":not([contenteditable=\"false\"])", "")
-            task = get_element_data(element, tag_name)
+            try:
+                locator = page.locator(selector)
+                element_count = await locator.count()
+            except Exception as e:
+                print("cannot get interactive element count", e)
+                continue
+            for index in range(element_count):
+                try:
+                    element = locator.nth(index)
+                    tag_name = selector.replace(":not([tabindex=\"-1\"])", "")
+                    tag_name = tag_name.replace(":not([contenteditable=\"false\"])", "")
+                    task = get_element_data(element, tag_name)
 
-            tasks.append(task)
+                    tasks.append(task)
+                except Exception as e:
+                    print("timeout in get_interactive_elements_with_playwright", e)
 
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     interactive_elements = []
     for i in results:
+        if isinstance(i, Exception):
+            continue
+
         if i:
             if i[0] in seen_elements:
                 continue
@@ -505,7 +522,7 @@ def saveconfig(config, save_file):
     if isinstance(config, dict):
         with open(save_file, 'w') as f:
             config_without_key = config
-            config_without_key["openai"]["api_key"] = "Your API key here"
+            config_without_key["api_parameter"]["api_key"] = "Your API key here"
             toml.dump(config_without_key, f)
     else:
         os.system(" ".join(["cp", str(config), str(save_file)]))

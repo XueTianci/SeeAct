@@ -43,7 +43,7 @@ from data_utils.prompts import generate_prompt, format_options
 from demo_utils.browser_helper import (normal_launch_async, normal_new_context_async,
                                        get_interactive_elements_with_playwright, select_option, saveconfig)
 from demo_utils.format_prompt import format_choices, format_ranking_input, postprocess_action_lmm
-from demo_utils.inference_engine import OpenaiEngine
+from demo_utils.inference_engine import OpenaiEngine, LitellmEngine
 from demo_utils.ranking_model import CrossEncoder, find_topk
 from demo_utils.website_dict import website_dict
 
@@ -187,11 +187,11 @@ async def run_single_task(task_id, single_query_task, config, base_dir):
     except:
         storage_state = None
 
-    # openai settings
-    openai_config = config["openai"]
-    if openai_config["api_key"] == "Your API Key Here":
-        raise Exception(
-            f"Please set your GPT API key first. (in {os.path.join(base_dir, 'config', 'demo_mode.toml')} by default)")
+    # # openai settings
+    api_parameter = config["api_parameter"]
+    # if openai_config["api_key"] == "Your API Key Here":
+    #     raise Exception(
+    #         f"Please set your GPT API key first. (in {os.path.join(base_dir, 'config', 'demo_mode.toml')} by default)")
 
     # playwright settings
     save_video = config["playwright"]["save_video"]
@@ -212,7 +212,8 @@ async def run_single_task(task_id, single_query_task, config, base_dir):
     trace_sources = config["playwright"]["trace"]["sources"]
 
     # Initialize Inference Engine based on OpenAI API
-    generation_model = OpenaiEngine(**openai_config, )
+    # generation_model = OpenaiEngine(**openai_config, )
+    generation_model = LitellmEngine(**api_parameter,)
 
     # Initialize Annotators
     bounding_box_annotator = sv.BoundingBoxAnnotator(
@@ -463,7 +464,7 @@ async def run_single_task(task_id, single_query_task, config, base_dir):
                     logger.info(clip)
 
                 try:
-                    os.makedirs(os.path.join(main_result_path, 'trajectories'), exist_ok=True)
+                    os.makedirs(os.path.join(main_result_path, 'trajectory'), exist_ok=True)
                     await session_control.active_page.screenshot(path=input_image_path, clip=clip, full_page=True,
                                                                     type='jpeg', quality=100, timeout=20000)
                     await session_control.active_page.screenshot(path=os.path.join(main_result_path, 'trajectory',f'{time_step}_full.jpg'), full_page=True,
@@ -489,7 +490,7 @@ async def run_single_task(task_id, single_query_task, config, base_dir):
                     for prompt_i in prompt:
                         logger.info(prompt_i)
 
-                output0 = generation_model.generate(prompt=prompt, image_path=input_image_path, turn_number=0)
+                output0, response1 = generation_model.generate(prompt=prompt, image_path=input_image_path, turn_number=0)
 
                 terminal_width = 10
                 logger.info("-" * terminal_width)
@@ -512,7 +513,7 @@ async def run_single_task(task_id, single_query_task, config, base_dir):
                 # logger.info(choice_text)
 
                 output = generation_model.generate(prompt=prompt, image_path=input_image_path, turn_number=1,
-                                                    ouput__0=output0)
+                                                    ouput__0=output0, response1=response1)
 
                 terminal_width = 10
                 logger.info("-" * terminal_width)
